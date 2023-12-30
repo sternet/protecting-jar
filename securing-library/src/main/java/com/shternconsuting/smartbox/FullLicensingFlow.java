@@ -77,6 +77,9 @@ public class FullLicensingFlow {
 	
 	public static String GenerateLincese() {
 		 try {
+	        KeyPair smartboxCompanyKey = generateRSAKeyPair("smartbox");
+	        KeyPair terminalKey = generateRSAKeyPair("terminal");
+		        
 			// Create License Information
 	        JSONObject licenseInfo = new JSONObject();
 	        licenseInfo.put("companyName", "Big Customer");
@@ -89,9 +92,6 @@ public class FullLicensingFlow {
 	        
 	        String licenseInfoHash = hashWithSHA256(licenseInfoJSON);
 	        System.out.println("License Info hash: " + licenseInfoHash);
-	        
-	        KeyPair smartboxCompanyKey = generateRSAKeyPair("smartbox");
-	        KeyPair terminalKey = generateRSAKeyPair("terminal");
 	        
 	        // Sign the License Information
 	        String signature = RSASignature.sign(licenseInfoJSON, smartboxCompanyKey.getPrivate());
@@ -125,8 +125,10 @@ public class FullLicensingFlow {
         return okm;
     }
 	
-	public static SecretKey createAESKeyFromBytes(byte[] aesKeyBytes) {
-        return new SecretKeySpec(aesKeyBytes, "AES");
+	public static SecretKey createAESKey(String keyMaterial) {
+		byte[] decodedKey = Base64.getDecoder().decode(keyMaterial);
+        byte[] aesKeyMaterial = hkdf(decodedKey, 32);
+        return new SecretKeySpec(aesKeyMaterial, "AES");
     }
 	
 	public static byte[] encryptBinary(byte[] data, SecretKey key) throws Exception {
@@ -152,11 +154,7 @@ public class FullLicensingFlow {
 	public static void main(String[] args) {
         try {
         	String keyMaterial = GenerateLincese();
-        	
-        	// Derive a 256-bit key (32 bytes) using HKDF
-        	byte[] keyHash = Base64.getDecoder().decode(keyMaterial);
-            byte[] aesKeyMaterial = hkdf(keyHash, 32);
-            SecretKey aesKey = createAESKeyFromBytes(aesKeyMaterial);
+            SecretKey aesKey = createAESKey(keyMaterial);
             System.out.println("Generated AES key from the key material: " + keyMaterial);
             
             String workingDirectory = System.getProperty("user.dir");

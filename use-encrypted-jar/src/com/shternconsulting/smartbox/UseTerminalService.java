@@ -8,9 +8,15 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.SignatureException;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
 import javax.crypto.Cipher;
@@ -31,6 +37,13 @@ public class UseTerminalService {
 	    return kf.generatePrivate(spec);
 	}
 	
+	public static PublicKey getPublicKeyFromFile(String publicKeyPath) throws Exception {
+	    byte[] keyBytes = Files.readAllBytes(Paths.get(publicKeyPath));
+	    X509EncodedKeySpec spec = new X509EncodedKeySpec(Base64.getDecoder().decode(keyBytes));
+	    KeyFactory kf = KeyFactory.getInstance("RSA");
+	    return kf.generatePublic(spec);
+	}
+	
 	public static String decryptRSA(String encryptedData, PrivateKey privateKey) throws Exception {
 	    Cipher cipher = Cipher.getInstance("RSA");
 	    cipher.init(Cipher.DECRYPT_MODE, privateKey);
@@ -38,14 +51,29 @@ public class UseTerminalService {
 	    return new String(decryptedBytes);
 	}
 	
-	public static String readLicenseHash(String licenseFilePath, String privateKeyPath) {
+	public static boolean verify(String data, String signature, PublicKey publicKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initVerify(publicKey);
+        sig.update(data.getBytes());
+        return sig.verify(Base64.getDecoder().decode(signature));
+    }
+
+	public static String readAndVerifyLicenseHash(String licenseFilePath, String privateKeyPath, String publicKeyPath) {
 		try {
 			String jsonData = new String(Files.readAllBytes(Paths.get(licenseFilePath)));
 	        JSONObject jsonObject = new JSONObject(jsonData);
-	        String encryptedHash = jsonObject.getString("ehash");
 	        
+	        String encryptedHash = jsonObject.getString("ehash");
 	        PrivateKey privateKey = getPrivateKeyFromFile(privateKeyPath);
 	        String decryptedHash = decryptRSA(encryptedHash, privateKey);
+	        
+	        String signature = jsonObject.getString("signature");
+	        JSONObject licenseInfo = jsonObject.getJSONObject("licenseInfo");
+	        String licenseInfoJSON = licenseInfo.toString(4);
+	        PublicKey publicKey = getPublicKeyFromFile(publicKeyPath);
+	        if (!verify(licenseInfoJSON, signature, publicKey)) {
+	        	throw new Exception("License is invalid, signature not verified!");
+	        }
 
 	        return decryptedHash;
 		} catch (Exception e) {
@@ -114,7 +142,8 @@ public class UseTerminalService {
         	String path = "../libraries/";
         	String licenseFilePath = path + "license.json";
         	String privateKeyPath = path + "terminal-private.key";
-        	String base64EncodedKey = readLicenseHash(licenseFilePath, privateKeyPath);
+        	String publicKeyPath = path + "smartbox-public.key";
+        	String base64EncodedKey = readAndVerifyLicenseHash(licenseFilePath, privateKeyPath, publicKeyPath);
 
             String encryptedJarFilePath = path + "sensitive-code-encrypted.jar";
             String jarToUsePath = DecryptSensitiveJar(encryptedJarFilePath, base64EncodedKey);
