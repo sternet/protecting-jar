@@ -1,0 +1,5 @@
+.metadata/
+securing-library/target/
+securing-library/.settings
+sensitive-code/bin/
+use-encrypted-jar/bin/
